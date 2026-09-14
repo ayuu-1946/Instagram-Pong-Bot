@@ -11,6 +11,10 @@ android {
     namespace 'com.ayuu.instapong'
     compileSdk 35
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId 'com.ayuu.instapong'
         minSdk 26
