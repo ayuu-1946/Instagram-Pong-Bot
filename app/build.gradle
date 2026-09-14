@@ -1,5 +1,12 @@
 plugins { id 'com.android.application' }
 
+def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+def keystoreFile = file('pong-release.keystore')
+def keystorePassword = System.getenv('PONG_KEYSTORE_PASSWORD')
+def keyAlias = System.getenv('PONG_KEY_ALIAS')
+def keyPassword = System.getenv('PONG_KEY_PASSWORD')
+def hasSigningKey = keystoreFile.exists() && keystorePassword && keyAlias && keyPassword
+
 android {
     namespace 'com.ayuu.instapong'
     compileSdk 35
@@ -8,13 +15,27 @@ android {
         applicationId 'com.ayuu.instapong'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '0.1.0'
+        versionCode runNumber
+        versionName "0.1.${runNumber}"
+    }
+
+    signingConfigs {
+        release {
+            if (hasSigningKey) {
+                storeFile keystoreFile
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            if (hasSigningKey) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
