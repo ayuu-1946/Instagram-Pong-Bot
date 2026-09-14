@@ -5,5 +5,6 @@
     <Button android:id="@+id/accessibility" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Open Accessibility Settings" />
     <Button android:id="@+id/start" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="Start Auto Play" />
     <Button android:id="@+id/stop" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="Stop" />
+    <Button android:id="@+id/update" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="Check for Update" />
     <TextView android:id="@+id/debug" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Detector: idle" android:fontFamily="monospace" />
 </LinearLayout>
