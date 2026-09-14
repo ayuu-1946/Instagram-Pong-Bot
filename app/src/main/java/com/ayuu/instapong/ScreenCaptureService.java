@@ -49,8 +49,7 @@ public class ScreenCaptureService extends Service {
     private float vy = 0f;
     private long lastTs = 0L;
 
-    @Override
-    public void onCreate() {
+    @Override public void onCreate() {
         super.onCreate();
         createChannel();
         thread = new HandlerThread("pong-capture");
@@ -58,12 +57,8 @@ public class ScreenCaptureService extends Service {
         handler = new Handler(thread.getLooper());
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent == null) { stopSelf(); return START_NOT_STICKY; }
         int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
         Intent data = getIntentExtra(intent);
         if (data == null || resultCode == 0) {
@@ -71,7 +66,6 @@ public class ScreenCaptureService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-
         startForeground(42, notification("Pong bot active"));
         stopProjectionResources();
         detector.reset();
@@ -90,8 +84,7 @@ public class ScreenCaptureService extends Service {
     }
 
     private void startProjection(int resultCode, Intent data) {
-        MediaProjectionManager mpm =
-                (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+        MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
         projection = mpm.getMediaProjection(resultCode, data);
         if (projection == null) {
             BotController.status("Unable to create screen capture");
@@ -99,18 +92,14 @@ public class ScreenCaptureService extends Service {
             return;
         }
         projection.registerCallback(projectionCallback, handler);
-
         android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
         int w = dm.widthPixels;
         int h = dm.heightPixels;
         int dpi = dm.densityDpi;
-
         reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 3);
         reader.setOnImageAvailableListener(r -> processLatest(), handler);
-        display = projection.createVirtualDisplay(
-                "InstagramPongBot", w, h, dpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                reader.getSurface(), null, handler);
+        display = projection.createVirtualDisplay("InstagramPongBot", w, h, dpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.getSurface(), null, handler);
         BotController.status(String.format(Locale.US,
                 "Capture live %dx%d\nWaiting for Pong trajectory...", w, h));
     }
@@ -128,8 +117,7 @@ public class ScreenCaptureService extends Service {
             int rowStride = p.getRowStride();
             int rowPadding = rowStride - pixelStride * w;
             Bitmap bmp = Bitmap.createBitmap(
-                    w + Math.max(0, rowPadding / Math.max(1, pixelStride)),
-                    h, Bitmap.Config.ARGB_8888);
+                    w + Math.max(0, rowPadding / Math.max(1, pixelStride)), h, Bitmap.Config.ARGB_8888);
             buf.rewind();
             bmp.copyPixelsFromBuffer(buf);
             if (bmp.getWidth() != w) {
@@ -181,23 +169,23 @@ public class ScreenCaptureService extends Service {
         lastBallY = o.ballY;
         lastTs = now;
 
-        // The emoji travels in both X and Y. The paddle only travels in X.
-        // We first find the exact future instant at which the ball's centre
-        // reaches the top of the paddle, including vertical wall bounces, then
-        // reflect the corresponding X trajectory at that same instant.
         float timeToHit = timeToPaddle(o.ballY, o.paddleY, vy, o.ballRadius,
                 b.getHeight(), o.paddleWidth);
-        float predictionTime = timeToHit > 0f ? Math.min(timeToHit, 1.20f) : 0.10f;
-        float target = predictInterceptX(o.ballX, vx, predictionTime,
+        float predictionTime = timeToHit > 0f ? Math.min(timeToHit, 1.20f) : 0.08f;
+        float predictedTarget = predictInterceptX(o.ballX, vx, predictionTime,
                 o.ballRadius, b.getWidth());
 
-        // When velocity has not stabilised yet, the current ball X is still a
-        // better target than leaving the paddle parked at its old position.
-        if (Math.abs(vx) < 70f && timeToHit <= 0f) target = o.ballX;
+        // Once the ball is on the lower half of the field, prioritize the actual
+        // current X instead of waiting on a potentially noisy velocity estimate.
+        // This makes the paddle visibly follow a descending ball and then settle
+        // into the exact intercept target near the paddle.
+        float target = o.ballY >= b.getHeight() * 0.52f
+                ? o.ballX
+                : predictedTarget;
+        if (Math.abs(vx) < 70f && Math.abs(vy) < 70f) target = o.ballX;
 
         float halfPaddle = Math.max(25f, o.paddleWidth * 0.48f);
-        target = Math.max(halfPaddle,
-                Math.min(b.getWidth() - halfPaddle, target));
+        target = Math.max(halfPaddle, Math.min(b.getWidth() - halfPaddle, target));
 
         PongAccessibilityService svc = PongAccessibilityService.instance;
         boolean moveSent = false;
@@ -205,8 +193,7 @@ public class ScreenCaptureService extends Service {
                 && BotController.shouldMove(target, o.paddleX, b.getWidth(), o.confidence)) {
             float distance = Math.abs(target - o.paddleX);
             long duration = (long) Math.max(65f, Math.min(145f, 68f + distance * 0.16f));
-            float touchY = Math.max(1f, Math.min(b.getHeight() - 1f,
-                    o.paddleY + PADDLE_TOUCH_Y_OFFSET));
+            float touchY = Math.max(1f, Math.min(b.getHeight() - 1f, o.paddleY + PADDLE_TOUCH_Y_OFFSET));
             moveSent = svc.movePaddle(o.paddleX, target, touchY, duration);
             if (moveSent) BotController.recordMove(target);
         }
@@ -230,22 +217,17 @@ public class ScreenCaptureService extends Service {
         float yy = y;
         float vv = vy;
         float elapsed = 0f;
-
         for (int i = 0; i < 8; i++) {
             if (vv > 0f) {
                 float t = (hitY - yy) / vv;
                 if (t >= 0f) return elapsed + t;
-                yy = hitY;
-            } else {
-                float t = (yy - top) / (-vv);
-                if (t < 0f) t = 0f;
-                elapsed += t;
-                if (elapsed > 1.5f) return -1f;
-                yy = top;
-                vv = -vv;
+                return -1f;
             }
-            float remaining = 1.5f - elapsed;
-            if (remaining <= 0f) return -1f;
+            float t = Math.max(0f, (yy - top) / (-vv));
+            elapsed += t;
+            if (elapsed > 1.5f) return -1f;
+            yy = top;
+            vv = -vv;
         }
         return -1f;
     }
@@ -266,8 +248,7 @@ public class ScreenCaptureService extends Service {
     }
 
     private Notification notification(String text) {
-        PendingIntent pi = PendingIntent.getActivity(
-                this, 0, new Intent(this, MainActivity.class),
+        PendingIntent pi = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CHANNEL)
                 .setContentTitle("Instagram Pong Bot")
@@ -279,10 +260,8 @@ public class ScreenCaptureService extends Service {
     }
 
     private void createChannel() {
-        NotificationManager nm =
-                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.createNotificationChannel(new NotificationChannel(
-                CHANNEL, "Pong Bot", NotificationManager.IMPORTANCE_LOW));
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Pong Bot", NotificationManager.IMPORTANCE_LOW));
     }
 
     private void stopProjectionResources() {
