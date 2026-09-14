@@ -42,10 +42,20 @@ public class PongAccessibilityService extends AccessibilityService {
         if (!gestureInFlight.compareAndSet(false, true)) {
             return false;
         }
-        long safeDuration = Math.max(28L, Math.min(110L, durationMs));
+
+        float clampedFrom = clampX(fromX);
+        float clampedTo = clampX(toX);
+        long safeDuration = Math.max(100L, Math.min(240L, durationMs));
+
+        // Use several points rather than a single jump so Instagram receives a
+        // normal-looking DOWN -> MOVE -> MOVE -> UP sequence across the paddle.
         Path path = new Path();
-        path.moveTo(fromX, y);
-        path.lineTo(toX, y);
+        path.moveTo(clampedFrom, y);
+        float dx = clampedTo - clampedFrom;
+        path.lineTo(clampedFrom + dx * 0.35f, y);
+        path.lineTo(clampedFrom + dx * 0.70f, y);
+        path.lineTo(clampedTo, y);
+
         GestureDescription.StrokeDescription stroke =
                 new GestureDescription.StrokeDescription(path, 0, safeDuration);
         GestureDescription gesture = new GestureDescription.Builder()
@@ -55,15 +65,26 @@ public class PongAccessibilityService extends AccessibilityService {
         boolean dispatched = dispatchGesture(gesture, new GestureResultCallback() {
             @Override public void onCompleted(GestureDescription g) {
                 gestureInFlight.set(false);
+                BotController.statusGesture("COMPLETED");
             }
+
             @Override public void onCancelled(GestureDescription g) {
                 gestureInFlight.set(false);
+                BotController.statusGesture("CANCELLED");
             }
         }, mainHandler);
 
         if (!dispatched) {
             gestureInFlight.set(false);
+            BotController.statusGesture("REJECTED");
+        } else {
+            BotController.statusGesture("SENT");
         }
         return dispatched;
+    }
+
+    private float clampX(float x) {
+        float w = getResources().getDisplayMetrics().widthPixels;
+        return Math.max(1f, Math.min(Math.max(2f, w - 1f), x));
     }
 }
