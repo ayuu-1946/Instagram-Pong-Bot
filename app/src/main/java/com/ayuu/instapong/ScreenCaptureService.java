@@ -27,7 +27,6 @@ public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "data";
     private static final String CHANNEL = "pong_bot";
-    // Instagram's touch indicator in the supplied recording sits on the paddle itself.
     private static final float PADDLE_TOUCH_Y_OFFSET = 0f;
 
     private MediaProjection projection;
@@ -184,6 +183,8 @@ public class ScreenCaptureService extends Service {
         lastBallY = o.ballY;
         lastTs = now;
 
+        // Y determines only when the ball reaches the paddle. The paddle itself
+        // is horizontal and is moved only along X.
         float timeToHit = timeToPaddle(o.ballY, o.paddleY, vy, b.getHeight());
         float predictionTime = timeToHit > 0f
                 ? Math.min(timeToHit, 0.65f)
