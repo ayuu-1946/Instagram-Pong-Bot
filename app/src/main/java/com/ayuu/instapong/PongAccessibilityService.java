@@ -41,27 +41,32 @@ public class PongAccessibilityService extends AccessibilityService {
     public boolean movePaddle(float fromX, float toX, float y, long durationMs) {
         if (!gestureInFlight.compareAndSet(false, true)) return false;
 
-        float clampedFrom = clampX(fromX);
-        float clampedTo = clampX(toX);
-        if (Math.abs(clampedTo - clampedFrom) < 2f) {
+        float width = getResources().getDisplayMetrics().widthPixels;
+        float clampedFrom = clampX(fromX, width);
+        float clampedTo = clampX(toX, width);
+        float clampedY = Math.max(1f, Math.min(getResources().getDisplayMetrics().heightPixels - 1f, y));
+        float distance = Math.abs(clampedTo - clampedFrom);
+        if (distance < 2f) {
             gestureInFlight.set(false);
             return false;
         }
 
-        // A real drag needs a definite DOWN on the paddle, a brief grip/wiggle,
-        // then a continuous horizontal move and UP. Keep it short enough that
-        // the next ball-position sample can issue another correction quickly.
-        long safeDuration = Math.max(65L, Math.min(150L, durationMs));
-        float direction = clampedTo >= clampedFrom ? 1f : -1f;
-        float gripX = clampX(clampedFrom + direction * Math.min(3f, Math.abs(clampedTo - clampedFrom) * 0.02f));
+        // Use a slow, unmistakable swipe. The first few path points keep the
+        // finger moving a few pixels before the large translation so apps that
+        // require a real drag MOVE sequence reliably recognize the gesture.
+        long safeDuration = Math.max(180L, Math.min(500L, durationMs));
+        float dir = clampedTo >= clampedFrom ? 1f : -1f;
+        float nudge = Math.min(6f, Math.max(2f, distance * 0.015f));
 
         Path path = new Path();
-        path.moveTo(clampedFrom, y);
-        path.lineTo(gripX, y);
-        path.lineTo(clampedFrom + (clampedTo - clampedFrom) * 0.25f, y);
-        path.lineTo(clampedFrom + (clampedTo - clampedFrom) * 0.55f, y);
-        path.lineTo(clampedFrom + (clampedTo - clampedFrom) * 0.82f, y);
-        path.lineTo(clampedTo, y);
+        path.moveTo(clampedFrom, clampedY);
+        path.lineTo(clampX(clampedFrom + dir * nudge, width), clampedY);
+        path.lineTo(clampX(clampedFrom + (clampedTo - clampedFrom) * 0.12f, width), clampedY);
+        path.lineTo(clampX(clampedFrom + (clampedTo - clampedFrom) * 0.30f, width), clampedY);
+        path.lineTo(clampX(clampedFrom + (clampedTo - clampedFrom) * 0.50f, width), clampedY);
+        path.lineTo(clampX(clampedFrom + (clampedTo - clampedFrom) * 0.72f, width), clampedY);
+        path.lineTo(clampX(clampedFrom + (clampedTo - clampedFrom) * 0.90f, width), clampedY);
+        path.lineTo(clampedTo, clampedY);
 
         GestureDescription.StrokeDescription stroke =
                 new GestureDescription.StrokeDescription(path, 0, safeDuration);
@@ -90,8 +95,7 @@ public class PongAccessibilityService extends AccessibilityService {
         return dispatched;
     }
 
-    private float clampX(float x) {
-        float w = getResources().getDisplayMetrics().widthPixels;
-        return Math.max(1f, Math.min(Math.max(2f, w - 1f), x));
+    private float clampX(float x, float width) {
+        return Math.max(1f, Math.min(Math.max(2f, width - 1f), x));
     }
 }
