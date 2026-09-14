@@ -27,6 +27,7 @@ public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "data";
     private static final String CHANNEL = "pong_bot";
+    private static final float PADDLE_TOUCH_Y_OFFSET = -45f;
 
     private MediaProjection projection;
     private VirtualDisplay display;
@@ -112,7 +113,8 @@ public class ScreenCaptureService extends Service {
                 w, h, dpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 reader.getSurface(), null, handler);
-        BotController.status("Capture live\nWaiting for Pong trajectory...");
+        BotController.status(String.format(java.util.Locale.US,
+                "Capture live %dx%d\nWaiting for Pong trajectory...", w, h));
     }
 
     private void processLatest() {
@@ -150,9 +152,6 @@ public class ScreenCaptureService extends Service {
         long now = SystemClock.uptimeMillis();
         PongDetector.Observation o = detector.detect(b);
 
-        // The visual paddle can disappear or be obscured between frames. In that case,
-        // continue from the last successful commanded position instead of snapping back
-        // to screen center on every frame.
         if (o.paddleEstimated) {
             o.paddleX = BotController.getEstimatedPaddleX(b.getWidth() * 0.50f);
         } else if (o.paddleFound) {
@@ -186,31 +185,33 @@ public class ScreenCaptureService extends Service {
 
         float target;
         float timeToHit = timeToPaddle(o.ballY, o.paddleY, vy, b.getHeight());
-        if (timeToHit > 0f) {
-            target = predictX(o.ballX, vx, timeToHit, o.ballRadius, b.getWidth());
-        } else {
-            float lookAhead = Math.min(0.16f, Math.max(0.035f,
-                    Math.abs(o.paddleY - o.ballY) / Math.max(200f, Math.abs(vy))));
-            target = reflectX(o.ballX + vx * lookAhead, o.ballRadius, b.getWidth());
-        }
+        // Do not extrapolate many seconds using a noisy early velocity estimate.
+        float predictionTime = timeToHit > 0f
+                ? Math.min(timeToHit, 0.65f)
+                : 0.12f;
+        target = predictX(o.ballX, vx, predictionTime, o.ballRadius, b.getWidth());
 
         float halfPaddle = Math.max(25f, o.paddleWidth * 0.48f);
         target = Math.max(halfPaddle, Math.min(b.getWidth() - halfPaddle, target));
 
         PongAccessibilityService svc = PongAccessibilityService.instance;
+        boolean moveSent = false;
         if (svc != null && !svc.isGestureInFlight()
                 && BotController.shouldMove(target, o.paddleX, b.getWidth(), o.confidence)) {
             float distance = Math.abs(target - o.paddleX);
-            long duration = (long) Math.max(32f, Math.min(90f, 28f + distance * 0.09f));
-            boolean sent = svc.movePaddle(o.paddleX, target, o.paddleY, duration);
-            if (sent) BotController.recordMove(target);
+            long duration = (long) Math.max(45f, Math.min(120f, 55f + distance * 0.08f));
+            float touchY = Math.max(1f, Math.min(b.getHeight() - 1f,
+                    o.paddleY + PADDLE_TOUCH_Y_OFFSET));
+            moveSent = svc.movePaddle(o.paddleX, target, touchY, duration);
+            if (moveSent) BotController.recordMove(target);
         }
 
         BotController.status(String.format(java.util.Locale.US,
-                "Ball x=%.0f y=%.0f v=(%.0f,%.0f)\nPaddle x=%.0f target=%.0f t=%.2fs c=%.2f%s",
+                "Ball x=%.0f y=%.0f v=(%.0f,%.0f)\nPaddle x=%.0f target=%.0f t=%.2fs c=%.2f%s\nGesture: %s",
                 o.ballX, o.ballY, vx, vy, o.paddleX, target,
                 Math.max(0f, timeToHit), o.confidence,
-                o.paddleEstimated ? " (estimated)" : ""));
+                o.paddleEstimated ? " (estimated)" : "",
+                moveSent ? "SENT" : "idle"));
     }
 
     private float timeToPaddle(float y, float paddleY, float vy, int h) {
