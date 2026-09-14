@@ -48,6 +48,7 @@ public class ScreenCaptureService extends Service {
     private float vx = 0f;
     private float vy = 0f;
     private long lastTs = 0L;
+    private boolean actuatorPrimed = false;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -73,6 +74,7 @@ public class ScreenCaptureService extends Service {
         lastBallX = lastBallY = -1f;
         vx = vy = 0f;
         lastTs = 0L;
+        actuatorPrimed = false;
         startProjection(resultCode, data);
         return START_NOT_STICKY;
     }
@@ -144,7 +146,31 @@ public class ScreenCaptureService extends Service {
             BotController.syncPaddleX(o.paddleX);
         }
 
-        if (!o.ballFound || !o.paddleFound || o.confidence < 0.55f) {
+        if (!o.paddleFound) return;
+
+        // First prove the actuator against the real paddle before trusting any
+        // trajectory prediction. The game is controlled by dragging the black
+        // paddle left/right, so this deliberate 180 px calibration drag must be
+        // visibly reflected in the game. After it succeeds, normal tracking takes over.
+        PongAccessibilityService svc = PongAccessibilityService.instance;
+        if (!actuatorPrimed && svc != null && !svc.isGestureInFlight()) {
+            float center = b.getWidth() * 0.50f;
+            float calibrationTarget = o.paddleX < center ? center + 180f : center - 180f;
+            float half = Math.max(25f, o.paddleWidth * 0.48f);
+            calibrationTarget = Math.max(half, Math.min(b.getWidth() - half, calibrationTarget));
+            float touchY = Math.max(1f, Math.min(b.getHeight() - 1f, o.paddleY));
+            boolean sent = svc.movePaddle(o.paddleX, calibrationTarget, touchY, 240L);
+            if (sent) {
+                actuatorPrimed = true;
+                BotController.recordMove(calibrationTarget);
+                BotController.status(String.format(Locale.US,
+                        "ACTUATOR TEST: %.0f -> %.0f\nWaiting for gesture completion...",
+                        o.paddleX, calibrationTarget));
+            }
+            return;
+        }
+
+        if (!o.ballFound || o.confidence < 0.55f) {
             if (o.ballFound) {
                 BotController.status(String.format(Locale.US,
                         "Tracking ball x=%.0f y=%.0f\nPaddle x=%.0f\nWaiting for stronger frame",
@@ -175,19 +201,12 @@ public class ScreenCaptureService extends Service {
         float predictedTarget = predictInterceptX(o.ballX, vx, predictionTime,
                 o.ballRadius, b.getWidth());
 
-        // Once the ball is on the lower half of the field, prioritize the actual
-        // current X instead of waiting on a potentially noisy velocity estimate.
-        // This makes the paddle visibly follow a descending ball and then settle
-        // into the exact intercept target near the paddle.
-        float target = o.ballY >= b.getHeight() * 0.52f
-                ? o.ballX
-                : predictedTarget;
+        float target = o.ballY >= b.getHeight() * 0.52f ? o.ballX : predictedTarget;
         if (Math.abs(vx) < 70f && Math.abs(vy) < 70f) target = o.ballX;
 
         float halfPaddle = Math.max(25f, o.paddleWidth * 0.48f);
         target = Math.max(halfPaddle, Math.min(b.getWidth() - halfPaddle, target));
 
-        PongAccessibilityService svc = PongAccessibilityService.instance;
         boolean moveSent = false;
         if (svc != null && !svc.isGestureInFlight()
                 && BotController.shouldMove(target, o.paddleX, b.getWidth(), o.confidence)) {
