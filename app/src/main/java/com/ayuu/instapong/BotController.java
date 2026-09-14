@@ -9,6 +9,7 @@ public final class BotController {
     private static Consumer<String> uiCallback;
     private static long lastMoveMs = 0;
     private static float lastTargetX = -1f;
+    private static float estimatedPaddleX = -1f;
 
     public static synchronized void setUiCallback(Consumer<String> cb) {
         uiCallback = cb;
@@ -31,11 +32,21 @@ public final class BotController {
 
     public static synchronized void recordMove(float targetX) {
         lastTargetX = targetX;
+        estimatedPaddleX = targetX;
         lastMoveMs = SystemClock.uptimeMillis();
+    }
+
+    public static synchronized void syncPaddleX(float actualX) {
+        estimatedPaddleX = actualX;
+    }
+
+    public static synchronized float getEstimatedPaddleX(float fallback) {
+        return estimatedPaddleX >= 0f ? estimatedPaddleX : fallback;
     }
 
     public static synchronized void reset() {
         lastMoveMs = 0L;
         lastTargetX = -1f;
+        estimatedPaddleX = -1f;
     }
 }
