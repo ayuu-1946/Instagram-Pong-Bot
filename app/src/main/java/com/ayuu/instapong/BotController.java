@@ -10,6 +10,7 @@ public final class BotController {
     private static long lastMoveMs = 0;
     private static float lastTargetX = -1f;
     private static float estimatedPaddleX = -1f;
+    private static String gestureState = "idle";
 
     public static synchronized void setUiCallback(Consumer<String> cb) {
         uiCallback = cb;
@@ -17,6 +18,11 @@ public final class BotController {
 
     public static synchronized void status(String text) {
         if (uiCallback != null) uiCallback.accept(text);
+    }
+
+    public static synchronized void statusGesture(String state) {
+        gestureState = state;
+        if (uiCallback != null) uiCallback.accept("Gesture: " + state);
     }
 
     public static synchronized boolean shouldMove(float targetX, float actualPaddleX, float screenWidth, float confidence) {
@@ -44,9 +50,14 @@ public final class BotController {
         return estimatedPaddleX >= 0f ? estimatedPaddleX : fallback;
     }
 
+    public static synchronized String getGestureState() {
+        return gestureState;
+    }
+
     public static synchronized void reset() {
         lastMoveMs = 0L;
         lastTargetX = -1f;
         estimatedPaddleX = -1f;
+        gestureState = "idle";
     }
 }
