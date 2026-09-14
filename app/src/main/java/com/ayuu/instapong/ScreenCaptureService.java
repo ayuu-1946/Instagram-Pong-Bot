@@ -28,7 +28,6 @@ public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "data";
     private static final String CHANNEL = "pong_bot";
-    private static final float PADDLE_TOUCH_Y_OFFSET = 0f;
 
     private MediaProjection projection;
     private VirtualDisplay display;
@@ -148,24 +147,28 @@ public class ScreenCaptureService extends Service {
 
         if (!o.paddleFound) return;
 
-        // First prove the actuator against the real paddle before trusting any
-        // trajectory prediction. The game is controlled by dragging the black
-        // paddle left/right, so this deliberate 180 px calibration drag must be
-        // visibly reflected in the game. After it succeeds, normal tracking takes over.
+        // First make a large, slow drag at the actual paddle height. This is
+        // deliberately independent of ball detection so the bot cannot sit
+        // there reporting successful gestures while never moving the paddle.
         PongAccessibilityService svc = PongAccessibilityService.instance;
         if (!actuatorPrimed && svc != null && !svc.isGestureInFlight()) {
             float center = b.getWidth() * 0.50f;
-            float calibrationTarget = o.paddleX < center ? center + 180f : center - 180f;
+            float target = o.paddleX < center ? center + b.getWidth() * 0.30f
+                    : center - b.getWidth() * 0.30f;
             float half = Math.max(25f, o.paddleWidth * 0.48f);
-            calibrationTarget = Math.max(half, Math.min(b.getWidth() - half, calibrationTarget));
-            float touchY = Math.max(1f, Math.min(b.getHeight() - 1f, o.paddleY));
-            boolean sent = svc.movePaddle(o.paddleX, calibrationTarget, touchY, 240L);
+            target = Math.max(half, Math.min(b.getWidth() - half, target));
+
+            // Instagram's paddle is about 86–88% down the screen. Use a fixed
+            // normalized touch point instead of a detector-derived Y so small
+            // rendering changes cannot place the injected finger above/below it.
+            float touchY = b.getHeight() * 0.8675f;
+            boolean sent = svc.movePaddle(o.paddleX, target, touchY, 420L);
             if (sent) {
                 actuatorPrimed = true;
-                BotController.recordMove(calibrationTarget);
+                BotController.recordMove(target);
                 BotController.status(String.format(Locale.US,
-                        "ACTUATOR TEST: %.0f -> %.0f\nWaiting for gesture completion...",
-                        o.paddleX, calibrationTarget));
+                        "ACTUATOR TEST: X %.0f -> %.0f, Y %.0f\n420 ms drag sent",
+                        o.paddleX, target, touchY));
             }
             return;
         }
@@ -211,8 +214,8 @@ public class ScreenCaptureService extends Service {
         if (svc != null && !svc.isGestureInFlight()
                 && BotController.shouldMove(target, o.paddleX, b.getWidth(), o.confidence)) {
             float distance = Math.abs(target - o.paddleX);
-            long duration = (long) Math.max(65f, Math.min(145f, 68f + distance * 0.16f));
-            float touchY = Math.max(1f, Math.min(b.getHeight() - 1f, o.paddleY + PADDLE_TOUCH_Y_OFFSET));
+            long duration = (long) Math.max(180f, Math.min(320f, 190f + distance * 0.20f));
+            float touchY = b.getHeight() * 0.8675f;
             moveSent = svc.movePaddle(o.paddleX, target, touchY, duration);
             if (moveSent) BotController.recordMove(target);
         }
