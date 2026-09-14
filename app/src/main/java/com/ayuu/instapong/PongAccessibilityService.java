@@ -39,21 +39,28 @@ public class PongAccessibilityService extends AccessibilityService {
     }
 
     public boolean movePaddle(float fromX, float toX, float y, long durationMs) {
-        if (!gestureInFlight.compareAndSet(false, true)) {
-            return false;
-        }
+        if (!gestureInFlight.compareAndSet(false, true)) return false;
 
         float clampedFrom = clampX(fromX);
         float clampedTo = clampX(toX);
-        long safeDuration = Math.max(100L, Math.min(240L, durationMs));
+        if (Math.abs(clampedTo - clampedFrom) < 2f) {
+            gestureInFlight.set(false);
+            return false;
+        }
 
-        // Use several points rather than a single jump so Instagram receives a
-        // normal-looking DOWN -> MOVE -> MOVE -> UP sequence across the paddle.
+        // A real drag needs a definite DOWN on the paddle, a brief grip/wiggle,
+        // then a continuous horizontal move and UP. Keep it short enough that
+        // the next ball-position sample can issue another correction quickly.
+        long safeDuration = Math.max(65L, Math.min(150L, durationMs));
+        float direction = clampedTo >= clampedFrom ? 1f : -1f;
+        float gripX = clampX(clampedFrom + direction * Math.min(3f, Math.abs(clampedTo - clampedFrom) * 0.02f));
+
         Path path = new Path();
         path.moveTo(clampedFrom, y);
-        float dx = clampedTo - clampedFrom;
-        path.lineTo(clampedFrom + dx * 0.35f, y);
-        path.lineTo(clampedFrom + dx * 0.70f, y);
+        path.lineTo(gripX, y);
+        path.lineTo(clampedFrom + (clampedTo - clampedFrom) * 0.25f, y);
+        path.lineTo(clampedFrom + (clampedTo - clampedFrom) * 0.55f, y);
+        path.lineTo(clampedFrom + (clampedTo - clampedFrom) * 0.82f, y);
         path.lineTo(clampedTo, y);
 
         GestureDescription.StrokeDescription stroke =
