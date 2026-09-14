@@ -150,6 +150,15 @@ public class ScreenCaptureService extends Service {
         long now = SystemClock.uptimeMillis();
         PongDetector.Observation o = detector.detect(b);
 
+        // The visual paddle can disappear or be obscured between frames. In that case,
+        // continue from the last successful commanded position instead of snapping back
+        // to screen center on every frame.
+        if (o.paddleEstimated) {
+            o.paddleX = BotController.getEstimatedPaddleX(b.getWidth() * 0.50f);
+        } else if (o.paddleFound) {
+            BotController.syncPaddleX(o.paddleX);
+        }
+
         if (!o.ballFound || !o.paddleFound || o.confidence < 0.55f) {
             if (o.ballFound) {
                 BotController.status(String.format(java.util.Locale.US,
@@ -165,7 +174,6 @@ public class ScreenCaptureService extends Service {
         if (lastBallX >= 0f) {
             float rawVx = (o.ballX - lastBallX) / dt;
             float rawVy = (o.ballY - lastBallY) / dt;
-            // Reject impossible one-frame spikes; keep the last stable estimate.
             float maxSpeed = Math.max(1800f, b.getWidth() * 5.0f);
             if (Math.abs(rawVx) < maxSpeed && Math.abs(rawVy) < maxSpeed) {
                 vx = vx * 0.70f + rawVx * 0.30f;
@@ -181,13 +189,11 @@ public class ScreenCaptureService extends Service {
         if (timeToHit > 0f) {
             target = predictX(o.ballX, vx, timeToHit, o.ballRadius, b.getWidth());
         } else {
-            // When the ball is descending directly over the paddle zone, use a short
-            // look-ahead rather than waiting for the exact crossing frame.
-            float lookAhead = Math.min(0.16f, Math.max(0.035f, Math.abs(o.paddleY - o.ballY) / Math.max(200f, Math.abs(vy))));
+            float lookAhead = Math.min(0.16f, Math.max(0.035f,
+                    Math.abs(o.paddleY - o.ballY) / Math.max(200f, Math.abs(vy))));
             target = reflectX(o.ballX + vx * lookAhead, o.ballRadius, b.getWidth());
         }
 
-        // Aim at the ball center, but never outside the paddle's reachable center range.
         float halfPaddle = Math.max(25f, o.paddleWidth * 0.48f);
         target = Math.max(halfPaddle, Math.min(b.getWidth() - halfPaddle, target));
 
@@ -201,9 +207,10 @@ public class ScreenCaptureService extends Service {
         }
 
         BotController.status(String.format(java.util.Locale.US,
-                "Ball x=%.0f y=%.0f v=(%.0f,%.0f)\nPaddle x=%.0f target=%.0f t=%.2fs c=%.2f",
+                "Ball x=%.0f y=%.0f v=(%.0f,%.0f)\nPaddle x=%.0f target=%.0f t=%.2fs c=%.2f%s",
                 o.ballX, o.ballY, vx, vy, o.paddleX, target,
-                Math.max(0f, timeToHit), o.confidence));
+                Math.max(0f, timeToHit), o.confidence,
+                o.paddleEstimated ? " (estimated)" : ""));
     }
 
     private float timeToPaddle(float y, float paddleY, float vy, int h) {
@@ -214,15 +221,13 @@ public class ScreenCaptureService extends Service {
         if (vy > 0f) {
             return Math.max(0.015f, (paddleY - y) / vy);
         }
-        // Ball is travelling upward: calculate the next descending crossing after the top bounce.
         float toTop = Math.max(0f, (y - top) / (-vy));
         float fromTopToPaddle = Math.max(0f, (paddleY - top) / (-vy));
         return toTop + fromTopToPaddle;
     }
 
     private float predictX(float x, float vx, float t, float radius, int width) {
-        float future = x + vx * t;
-        return reflectX(future, radius, width);
+        return reflectX(x + vx * t, radius, width);
     }
 
     private float reflectX(float x, float radius, int width) {
