@@ -22,6 +22,7 @@ import android.os.IBinder;
 import android.os.SystemClock;
 
 import java.nio.ByteBuffer;
+import java.util.Locale;
 
 public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_CODE = "resultCode";
@@ -84,9 +85,7 @@ public class ScreenCaptureService extends Service {
 
     @SuppressWarnings("deprecation")
     private Intent getIntentExtra(Intent intent) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            return intent.getParcelableExtra(EXTRA_DATA, Intent.class);
-        }
+        if (Build.VERSION.SDK_INT >= 33) return intent.getParcelableExtra(EXTRA_DATA, Intent.class);
         return intent.getParcelableExtra(EXTRA_DATA);
     }
 
@@ -109,11 +108,10 @@ public class ScreenCaptureService extends Service {
         reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 3);
         reader.setOnImageAvailableListener(r -> processLatest(), handler);
         display = projection.createVirtualDisplay(
-                "InstagramPongBot",
-                w, h, dpi,
+                "InstagramPongBot", w, h, dpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 reader.getSurface(), null, handler);
-        BotController.status(String.format(java.util.Locale.US,
+        BotController.status(String.format(Locale.US,
                 "Capture live %dx%d\nWaiting for Pong trajectory...", w, h));
     }
 
@@ -160,53 +158,60 @@ public class ScreenCaptureService extends Service {
 
         if (!o.ballFound || !o.paddleFound || o.confidence < 0.55f) {
             if (o.ballFound) {
-                BotController.status(String.format(java.util.Locale.US,
-                        "Tracking x=%.0f y=%.0f\nPaddle x=%.0f\nLow confidence — holding",
+                BotController.status(String.format(Locale.US,
+                        "Tracking ball x=%.0f y=%.0f\nPaddle x=%.0f\nWaiting for stronger frame",
                         o.ballX, o.ballY, o.paddleX));
             }
             return;
         }
 
         float dt = lastTs > 0L
-                ? Math.max(0.008f, Math.min(0.12f, (now - lastTs) / 1000f))
+                ? Math.max(0.008f, Math.min(0.10f, (now - lastTs) / 1000f))
                 : 0.016f;
         if (lastBallX >= 0f) {
             float rawVx = (o.ballX - lastBallX) / dt;
             float rawVy = (o.ballY - lastBallY) / dt;
-            float maxSpeed = Math.max(1800f, b.getWidth() * 5.0f);
+            float maxSpeed = Math.max(2200f, b.getWidth() * 6.0f);
             if (Math.abs(rawVx) < maxSpeed && Math.abs(rawVy) < maxSpeed) {
-                vx = vx * 0.70f + rawVx * 0.30f;
-                vy = vy * 0.70f + rawVy * 0.30f;
+                vx = vx * 0.55f + rawVx * 0.45f;
+                vy = vy * 0.55f + rawVy * 0.45f;
             }
         }
         lastBallX = o.ballX;
         lastBallY = o.ballY;
         lastTs = now;
 
-        // Y determines only when the ball reaches the paddle. The paddle itself
-        // is horizontal and is moved only along X.
-        float timeToHit = timeToPaddle(o.ballY, o.paddleY, vy, b.getHeight());
-        float predictionTime = timeToHit > 0f
-                ? Math.min(timeToHit, 0.65f)
-                : 0.12f;
-        float target = predictX(o.ballX, vx, predictionTime, o.ballRadius, b.getWidth());
+        // The emoji travels in both X and Y. The paddle only travels in X.
+        // We first find the exact future instant at which the ball's centre
+        // reaches the top of the paddle, including vertical wall bounces, then
+        // reflect the corresponding X trajectory at that same instant.
+        float timeToHit = timeToPaddle(o.ballY, o.paddleY, vy, o.ballRadius,
+                b.getHeight(), o.paddleWidth);
+        float predictionTime = timeToHit > 0f ? Math.min(timeToHit, 1.20f) : 0.10f;
+        float target = predictInterceptX(o.ballX, vx, predictionTime,
+                o.ballRadius, b.getWidth());
+
+        // When velocity has not stabilised yet, the current ball X is still a
+        // better target than leaving the paddle parked at its old position.
+        if (Math.abs(vx) < 70f && timeToHit <= 0f) target = o.ballX;
 
         float halfPaddle = Math.max(25f, o.paddleWidth * 0.48f);
-        target = Math.max(halfPaddle, Math.min(b.getWidth() - halfPaddle, target));
+        target = Math.max(halfPaddle,
+                Math.min(b.getWidth() - halfPaddle, target));
 
         PongAccessibilityService svc = PongAccessibilityService.instance;
         boolean moveSent = false;
         if (svc != null && !svc.isGestureInFlight()
                 && BotController.shouldMove(target, o.paddleX, b.getWidth(), o.confidence)) {
             float distance = Math.abs(target - o.paddleX);
-            long duration = (long) Math.max(90f, Math.min(220f, 95f + distance * 0.22f));
+            long duration = (long) Math.max(65f, Math.min(145f, 68f + distance * 0.16f));
             float touchY = Math.max(1f, Math.min(b.getHeight() - 1f,
                     o.paddleY + PADDLE_TOUCH_Y_OFFSET));
             moveSent = svc.movePaddle(o.paddleX, target, touchY, duration);
             if (moveSent) BotController.recordMove(target);
         }
 
-        BotController.status(String.format(java.util.Locale.US,
+        BotController.status(String.format(Locale.US,
                 "Ball x=%.0f y=%.0f v=(%.0f,%.0f)\nPaddle x=%.0f target=%.0f t=%.2fs c=%.2f%s\nGesture: %s",
                 o.ballX, o.ballY, vx, vy, o.paddleX, target,
                 Math.max(0f, timeToHit), o.confidence,
@@ -214,20 +219,38 @@ public class ScreenCaptureService extends Service {
                 moveSent ? "SENT" : "idle"));
     }
 
-    private float timeToPaddle(float y, float paddleY, float vy, int h) {
+    private float timeToPaddle(float y, float paddleY, float vy, float radius,
+                               int h, float paddleWidth) {
         final float top = Math.max(76f, h * 0.055f);
-        final float eps = 35f;
-        if (paddleY <= y + eps) return 0.05f;
-        if (Math.abs(vy) < 80f) return -1f;
-        if (vy > 0f) {
-            return Math.max(0.015f, (paddleY - y) / vy);
+        final float paddleHalfHeight = Math.max(10f, paddleWidth * 0.20f);
+        final float hitY = Math.max(top + 2f, paddleY - paddleHalfHeight - radius);
+        if (hitY <= y + 2f) return 0.03f;
+        if (Math.abs(vy) < 65f) return -1f;
+
+        float yy = y;
+        float vv = vy;
+        float elapsed = 0f;
+
+        for (int i = 0; i < 8; i++) {
+            if (vv > 0f) {
+                float t = (hitY - yy) / vv;
+                if (t >= 0f) return elapsed + t;
+                yy = hitY;
+            } else {
+                float t = (yy - top) / (-vv);
+                if (t < 0f) t = 0f;
+                elapsed += t;
+                if (elapsed > 1.5f) return -1f;
+                yy = top;
+                vv = -vv;
+            }
+            float remaining = 1.5f - elapsed;
+            if (remaining <= 0f) return -1f;
         }
-        float toTop = Math.max(0f, (y - top) / (-vy));
-        float fromTopToPaddle = Math.max(0f, (paddleY - top) / (-vy));
-        return toTop + fromTopToPaddle;
+        return -1f;
     }
 
-    private float predictX(float x, float vx, float t, float radius, int width) {
+    private float predictInterceptX(float x, float vx, float t, float radius, int width) {
         return reflectX(x + vx * t, radius, width);
     }
 
@@ -256,7 +279,8 @@ public class ScreenCaptureService extends Service {
     }
 
     private void createChannel() {
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager nm =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         nm.createNotificationChannel(new NotificationChannel(
                 CHANNEL, "Pong Bot", NotificationManager.IMPORTANCE_LOW));
     }
