@@ -25,15 +25,17 @@ public final class BotController {
         if (uiCallback != null) uiCallback.accept("Gesture: " + state);
     }
 
-    public static synchronized boolean shouldMove(float targetX, float actualPaddleX, float screenWidth, float confidence) {
+    public static synchronized boolean shouldMove(float targetX, float actualPaddleX,
+                                                   float screenWidth, float confidence) {
         if (confidence < 0.55f) return false;
         long now = SystemClock.uptimeMillis();
         float error = Math.abs(targetX - actualPaddleX);
-        float deadband = Math.max(10f, screenWidth * 0.016f);
+        float deadband = Math.max(6f, screenWidth * 0.009f);
         if (error < deadband) return false;
-        if (lastTargetX >= 0f && Math.abs(targetX - lastTargetX) < Math.max(8f, screenWidth * 0.012f)
-                && now - lastMoveMs < 90L) return false;
-        return now - lastMoveMs >= 65L || error > screenWidth * 0.12f;
+        if (lastTargetX >= 0f
+                && Math.abs(targetX - lastTargetX) < Math.max(5f, screenWidth * 0.007f)
+                && now - lastMoveMs < 50L) return false;
+        return now - lastMoveMs >= 35L || error > screenWidth * 0.08f;
     }
 
     public static synchronized void recordMove(float targetX) {
