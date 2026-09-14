@@ -2,10 +2,10 @@ plugins { id 'com.android.application' }
 
 def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
 def keystoreFile = file('pong-release.keystore')
-def keystorePassword = System.getenv('PONG_KEYSTORE_PASSWORD')
-def keyAlias = System.getenv('PONG_KEY_ALIAS')
-def keyPassword = System.getenv('PONG_KEY_PASSWORD')
-def hasSigningKey = keystoreFile.exists() && keystorePassword && keyAlias && keyPassword
+def signingStorePassword = System.getenv('PONG_KEYSTORE_PASSWORD')
+def signingAlias = System.getenv('PONG_KEY_ALIAS')
+def signingKeyPassword = System.getenv('PONG_KEY_PASSWORD')
+def hasSigningKey = keystoreFile.exists() && signingStorePassword && signingAlias && signingKeyPassword
 
 android {
     namespace 'com.ayuu.instapong'
@@ -23,9 +23,9 @@ android {
         release {
             if (hasSigningKey) {
                 storeFile keystoreFile
-                storePassword keystorePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+                storePassword signingStorePassword
+                keyAlias signingAlias
+                keyPassword signingKeyPassword
             }
         }
     }
