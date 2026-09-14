@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="24dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Instagram Pong Bot" android:textSize="26sp" android:textStyle="bold" />
+    <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="1. Grant Accessibility permission\n2. Tap Start capture\n3. Switch to Instagram Pong" android:textSize="16sp" />
+    <Button android:id="@+id/accessibility" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Open Accessibility Settings" />
+    <Button android:id="@+id/start" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="Start Auto Play" />
+    <Button android:id="@+id/stop" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="Stop" />
+    <TextView android:id="@+id/debug" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Detector: idle" android:fontFamily="monospace" />
+</LinearLayout>
