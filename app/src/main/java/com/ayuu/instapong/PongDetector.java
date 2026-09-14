@@ -40,8 +40,6 @@ public final class PongDetector {
         final int w = b.getWidth();
         final int h = b.getHeight();
 
-        // Real paddle: look only where Instagram actually places it. Require the
-        // same dark horizontal run on several adjacent rows and reject screen edges.
         int paddleTop = (int) (h * 0.805f);
         int paddleBottom = (int) (h * 0.925f);
         int bestRun = 0, bestY = -1, bestStart = -1, bestEnd = -1, bestRows = 0;
@@ -84,12 +82,11 @@ public final class PongDetector {
         if (bestRun > 0 && bestRows >= 3) {
             o.paddleFound = true;
             o.paddleX = (bestStart + bestEnd) * 0.5f;
-            o.paddleY = bestY;
+            // bestY is near the top of the black bar; use its geometric centre
+            // for both trajectory timing and the injected touch point.
+            o.paddleY = bestY + bestRun * 0.20f;
             o.paddleWidth = bestRun;
         } else {
-            // Stable fallback based on the measured paddle geometry from the supplied
-            // recording: width ~= 28% of screen, centerline ~= 86% of screen height.
-            // This is intentionally preferable to a false x=0 detection.
             o.paddleFound = true;
             o.paddleEstimated = true;
             o.paddleX = w * 0.50f;
