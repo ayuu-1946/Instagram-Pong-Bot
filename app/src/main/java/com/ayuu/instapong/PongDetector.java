@@ -38,7 +38,7 @@ public final class PongDetector {
         final int w = b.getWidth();
         final int h = b.getHeight();
 
-        // Paddle first: its geometry gives us the true lower game boundary.
+        // Detect the paddle first so the ball search can stop above the actual paddle area.
         int paddleTop = (int) (h * 0.76f);
         int paddleBottom = (int) (h * 0.96f);
         int bestRun = 0, bestY = -1, bestStart = -1, bestEnd = -1;
@@ -69,13 +69,16 @@ public final class PongDetector {
             o.paddleWidth = bestRun;
         }
 
-        final float playBottom = o.paddleFound ? o.paddleY - Math.max(38f, o.paddleWidth * 0.35f) : h * 0.88f;
+        final float playBottom = o.paddleFound
+                ? o.paddleY - Math.max(38f, o.paddleWidth * 0.35f)
+                : h * 0.88f;
         final int y0 = Math.max((int) (h * 0.10f), 110);
         final int y1 = Math.min(h - 1, (int) playBottom);
         if (y1 <= y0) return o;
 
-        // Compact yellow/orange component extraction. Threshold is deliberately broader
-        // than the original and uses saturation/contrast instead of one exact RGB range.
+        // The supplied recording has a low-saturation pastel background (roughly 100 RGB
+        // saturation units) and a high-saturation emoji (roughly 200). A high threshold is
+        // deliberate: it prevents the background from becoming one giant connected component.
         final int step = 3;
         final int gw = (w + step - 1) / step;
         final int gy0 = y0 / step;
@@ -93,18 +96,16 @@ public final class PongDetector {
                 int mx = Math.max(r, Math.max(g, bl));
                 int mn = Math.min(r, Math.min(g, bl));
                 int sat = mx - mn;
-                // Yellow/orange family, including antialiased edges of the emoji.
-                mask[row + gx] = mx > 150 && sat > 55 && r > 150 && g > 75
-                        && r > bl * 1.35f && g > bl * 1.20f;
+                mask[row + gx] = mx > 145 && sat > 135 && r > 165 && g > 75
+                        && r > bl * 1.30f && g > bl * 1.15f;
             }
         }
 
         boolean[] seen = new boolean[mask.length];
         List<Candidate> candidates = new ArrayList<>();
         for (int ly = 0; ly < gh; ly++) {
-            int row = ly * gw;
             for (int lx = 0; lx < gw; lx++) {
-                int idx = row + lx;
+                int idx = ly * gw + lx;
                 if (!mask[idx] || seen[idx]) continue;
 
                 int minX = lx, maxX = lx, minY = ly, maxY = ly, count = 0;
@@ -132,11 +133,11 @@ public final class PongDetector {
                 int bw = (maxX - minX + 1) * step;
                 int bh = (maxY - minY + 1) * step;
                 int area = count * step * step;
-                if (bw < 34 || bh < 34 || bw > 120 || bh > 120 || area < 500 || area > 6500) continue;
+                if (bw < 32 || bh < 32 || bw > 125 || bh > 125 || area < 450 || area > 6500) continue;
                 float aspect = Math.min(bw, bh) / (float) Math.max(bw, bh);
                 if (aspect < 0.58f) continue;
                 float density = area / (float) Math.max(1, bw * bh);
-                if (density < 0.18f) continue;
+                if (density < 0.16f) continue;
 
                 float cx = sx / (float) count * step;
                 float cy = sy / (float) count * step;
@@ -149,23 +150,22 @@ public final class PongDetector {
         final long now = SystemClock.uptimeMillis();
         Candidate best = null;
         float bestScore = -Float.MAX_VALUE;
-        float dt = lastTs > 0 ? Math.max(0.008f, Math.min(0.12f, (now - lastTs) / 1000f)) : 0.016f;
-        float predictedX = lastX >= 0 ? lastX + filteredVx * dt : -1f;
-        float predictedY = lastY >= 0 ? lastY + filteredVy * dt : -1f;
+        float dt = lastTs > 0L ? Math.max(0.008f, Math.min(0.12f, (now - lastTs) / 1000f)) : 0.016f;
+        float predictedX = lastX >= 0f ? lastX + filteredVx * dt : -1f;
+        float predictedY = lastY >= 0f ? lastY + filteredVy * dt : -1f;
 
         for (Candidate c : candidates) {
             float score = c.area * (0.45f + c.density);
-            // Strong temporal gating after initialization.
-            if (lastX >= 0) {
+            float dist = 0f;
+            if (lastX >= 0f) {
                 float dx = c.x - predictedX;
                 float dy = c.y - predictedY;
-                float dist = (float) Math.sqrt(dx * dx + dy * dy);
+                dist = (float) Math.sqrt(dx * dx + dy * dy);
                 float speed = (float) Math.sqrt(filteredVx * filteredVx + filteredVy * filteredVy);
                 float gate = Math.max(65f, speed * dt * 2.8f + 45f);
                 if (dist > gate) continue;
                 score *= 1.0f + 3.0f * Math.max(0f, 1f - dist / gate);
             } else {
-                // Before a track exists, prefer the larger compact emoji below the scoreboard.
                 score *= 1f + Math.min(1f, Math.max(0f, (c.y - h * 0.13f) / (h * 0.25f)));
             }
             if (score > bestScore) {
@@ -176,10 +176,9 @@ public final class PongDetector {
 
         if (best == null) return o;
 
-        float rawVx = lastX >= 0 ? (best.x - lastX) / dt : 0f;
-        float rawVy = lastY >= 0 ? (best.y - lastY) / dt : 0f;
-        if (lastX >= 0) {
-            // Alpha-beta style smoothing; resistant to one-frame segmentation jitter.
+        float rawVx = lastX >= 0f ? (best.x - lastX) / dt : 0f;
+        float rawVy = lastY >= 0f ? (best.y - lastY) / dt : 0f;
+        if (lastX >= 0f) {
             filteredVx = filteredVx * 0.65f + rawVx * 0.35f;
             filteredVy = filteredVy * 0.65f + rawVy * 0.35f;
         }
@@ -191,7 +190,9 @@ public final class PongDetector {
         o.ballX = best.x;
         o.ballY = best.y;
         o.ballRadius = best.radius;
-        o.confidence = Math.max(0f, Math.min(1f, 0.35f + 0.40f * best.density + (lastX >= 0 ? 0.25f : 0f)));
+        o.confidence = lastX >= 0f
+                ? Math.max(0f, Math.min(1f, 0.55f + 0.40f * best.density))
+                : 0.75f;
         return o;
     }
 
