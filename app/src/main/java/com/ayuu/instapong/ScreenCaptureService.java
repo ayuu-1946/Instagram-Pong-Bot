@@ -27,7 +27,8 @@ public class ScreenCaptureService extends Service {
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "data";
     private static final String CHANNEL = "pong_bot";
-    private static final float PADDLE_TOUCH_Y_OFFSET = -45f;
+    // Instagram's touch indicator in the supplied recording sits on the paddle itself.
+    private static final float PADDLE_TOUCH_Y_OFFSET = 0f;
 
     private MediaProjection projection;
     private VirtualDisplay display;
@@ -183,13 +184,11 @@ public class ScreenCaptureService extends Service {
         lastBallY = o.ballY;
         lastTs = now;
 
-        float target;
         float timeToHit = timeToPaddle(o.ballY, o.paddleY, vy, b.getHeight());
-        // Do not extrapolate many seconds using a noisy early velocity estimate.
         float predictionTime = timeToHit > 0f
                 ? Math.min(timeToHit, 0.65f)
                 : 0.12f;
-        target = predictX(o.ballX, vx, predictionTime, o.ballRadius, b.getWidth());
+        float target = predictX(o.ballX, vx, predictionTime, o.ballRadius, b.getWidth());
 
         float halfPaddle = Math.max(25f, o.paddleWidth * 0.48f);
         target = Math.max(halfPaddle, Math.min(b.getWidth() - halfPaddle, target));
@@ -199,7 +198,7 @@ public class ScreenCaptureService extends Service {
         if (svc != null && !svc.isGestureInFlight()
                 && BotController.shouldMove(target, o.paddleX, b.getWidth(), o.confidence)) {
             float distance = Math.abs(target - o.paddleX);
-            long duration = (long) Math.max(45f, Math.min(120f, 55f + distance * 0.08f));
+            long duration = (long) Math.max(90f, Math.min(220f, 95f + distance * 0.22f));
             float touchY = Math.max(1f, Math.min(b.getHeight() - 1f,
                     o.paddleY + PADDLE_TOUCH_Y_OFFSET));
             moveSent = svc.movePaddle(o.paddleX, target, touchY, duration);
